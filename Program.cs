@@ -43,6 +43,7 @@ class CybersecurityChatbot
                     waveOut.Play();  // Start playing the audio
 
                     // Wait until playback finishes
+                    // Chatbot will continue running after
                     while (waveOut.PlaybackState == PlaybackState.Playing)
                     {
                         // Sleep briefly while audio is playing
