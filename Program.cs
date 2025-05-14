@@ -1,19 +1,32 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Media;
-using NAudio.Wave;  // Import NAudio for audio playback
+using NAudio.Wave;
 using System.Threading;
+using System.Collections.Generic;
 
 class CybersecurityChatbot
 {
+    static Random random = new Random();
+    static string lastTopic = "";
+    static string favoriteTopic = "";
+
+    static Dictionary<string, Action> topicResponders = new Dictionary<string, Action>(StringComparer.OrdinalIgnoreCase)
+    {
+        { "password", RespondPasswordSafety },
+        { "phishing", RespondPhishing },
+        { "browsing", RespondSafeBrowsing },
+        { "safe browsing", RespondSafeBrowsing },
+        { "password safety", RespondPasswordSafety }
+    };
+
     static void Main()
     {
         Console.Title = "Cybersecurity Awareness Bot";
-        Console.OutputEncoding = System.Text.Encoding.UTF8; // Support special characters
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-        PlayAudio("Welcome.wav"); // Play the welcome audio using NAudio
-
-        DisplayAsciiArt(); // Show ASCII art logo
+        PlayAudio("Welcome.wav");
+        DisplayAsciiArt();
 
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.Write("\nWhat is your name? ");
@@ -21,32 +34,27 @@ class CybersecurityChatbot
         Console.ResetColor();
 
         Console.Clear();
-        DisplayHeader($"Welcome, {userName}!", ConsoleColor.Green); 
-        DisplayLine('*', 50); // Divider
+        DisplayHeader($"Welcome, {userName}!", ConsoleColor.Green);
+        DisplayLine('*', 50);
 
-        RunChatbot(userName); // Start chatbot interaction
+        RunChatbot(userName);
     }
 
-    // Plays the Audio Greeting using NAudio//
     static void PlayAudio(string fileName)
     {
         try
         {
-            string filePath = @"C:\Users\RC_Student_lab\source\repos\CybersecurityChatbot\Welcome.wav"; // Correct the path to your audio file
+            string filePath = @"C:\Users\RC_Student_lab\source\repos\CybersecurityChatbot\Welcome.wav";
             if (File.Exists(filePath))
             {
-                // Use NAudio to play the audio file
                 using (var audioFileReader = new AudioFileReader(filePath))
                 using (var waveOut = new WaveOutEvent())
                 {
-                    waveOut.Init(audioFileReader);  // Initialize playback with audio file
-                    waveOut.Play();  // Start playing the audio
+                    waveOut.Init(audioFileReader);
+                    waveOut.Play();
 
-                    // Wait until playback finishes
-                    // Chatbot will continue running after
                     while (waveOut.PlaybackState == PlaybackState.Playing)
                     {
-                        // Sleep briefly while audio is playing
                         Thread.Sleep(100);
                     }
                 }
@@ -62,7 +70,6 @@ class CybersecurityChatbot
         }
     }
 
-    // Displaying ASCII Art Logo
     static void DisplayAsciiArt()
     {
         Console.ForegroundColor = ConsoleColor.DarkMagenta;
@@ -78,7 +85,6 @@ class CybersecurityChatbot
         Console.ResetColor();
     }
 
-    // Run the chatbot conversation with user
     static void RunChatbot(string userName)
     {
         bool isRunning = true;
@@ -88,90 +94,199 @@ class CybersecurityChatbot
             Console.ForegroundColor = ConsoleColor.Cyan;
             TypeText($"\n{userName}, how can I help you today? ");
             Console.ResetColor();
-            string userInput = Console.ReadLine().ToLower().Trim(); // Convert user input to lowercase and trim leading/trailing spaces
+            string userInput = Console.ReadLine().ToLower().Trim();
 
-            // Validate input: Check for empty input
+            // New numeric-only input validation
+            if (int.TryParse(userInput, out _) || double.TryParse(userInput, out _))
+            {
+                TypeText("\nThat looks like a number. Please enter a valid question or topic.");
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(userInput))
             {
                 TypeText("\nI didn't quite understand that. Could you please enter a valid question or request?");
+                continue;
             }
-            // Exit condition
-            else if (userInput.Contains("exit") || userInput.Contains("bye"))
+
+            if (DetectAndRespondToSentiment(userInput)) continue;
+
+            if (userInput.Contains("exit") || userInput.Contains("bye"))
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 TypeText("\nGoodbye! Stay safe online!");
                 Console.ResetColor();
-                isRunning = false;  // Exit the chatbot loop
+                isRunning = false;
+                continue;
             }
-            // Respond to various cybersecurity questions
-            else if (userInput.Contains("how are you") || userInput.Contains("how are you doing"))
+
+            if (userInput.Contains("i'm interested in") || userInput.Contains("my favorite topic is"))
+            {
+                foreach (var topic in topicResponders.Keys)
+                {
+                    if (userInput.Contains(topic))
+                    {
+                        favoriteTopic = topic;
+                        TypeText($"\nGreat! I'll remember that you're interested in {topic}. It's a crucial part of staying safe online.");
+                        break;
+                    }
+                }
+                if (string.IsNullOrEmpty(favoriteTopic))
+                    TypeText("\nThanks for sharing! I'll try to remember that.");
+                continue;
+            }
+
+            if (userInput.Contains("remind me my topic") || userInput.Contains("what's my favorite"))
+            {
+                if (!string.IsNullOrEmpty(favoriteTopic))
+                {
+                    TypeText($"\nYou told me you're interested in {favoriteTopic}. That's a smart choice!");
+                }
+                else
+                {
+                    TypeText("\nYou haven't told me your favorite topic yet. Feel free to share it!");
+                }
+                continue;
+            }
+
+            bool isFollowUp = userInput.Contains("another") || userInput.Contains("more") ||
+                              userInput.Contains("explain") || userInput.Contains("tell me again") ||
+                              userInput.Contains("i'm confused");
+
+            if (isFollowUp)
+            {
+                if (!string.IsNullOrEmpty(lastTopic) && topicResponders.ContainsKey(lastTopic))
+                {
+                    topicResponders[lastTopic].Invoke();
+                    continue;
+                }
+                else
+                {
+                    TypeText("\nCould you clarify what topic you're referring to? You can ask about password safety, phishing, or safe browsing.");
+                    continue;
+                }
+            }
+
+            if (userInput.Contains("how are you") || userInput.Contains("how are you doing"))
             {
                 RespondHowAreYou();
+                continue;
             }
-            else if (userInput.Contains("what's your purpose") || userInput.Contains("what do you do"))
+
+            if (userInput.Contains("what's your purpose") || userInput.Contains("what do you do"))
             {
                 RespondPurpose();
+                continue;
             }
-            else if (userInput.Contains("what can i ask you about"))
+
+            if (userInput.Contains("what can i ask you about"))
             {
                 RespondTopics();
+                continue;
             }
-            else if (userInput.Contains("password safety"))
+
+            // Topic-based detection
+            bool matchedTopic = false;
+            foreach (var topic in topicResponders.Keys)
             {
-                RespondPasswordSafety();
+                if (userInput.Contains(topic))
+                {
+                    topicResponders[topic].Invoke();
+                    lastTopic = topic;
+                    matchedTopic = true;
+                    break;
+                }
             }
-            else if (userInput.Contains("phishing"))
-            {
-                RespondPhishing();
-            }
-            else if (userInput.Contains("safe browsing"))
-            {
-                RespondSafeBrowsing();
-            }
-            else
+
+            if (!matchedTopic)
             {
                 TypeText("\nI didn't quite understand that. Could you rephrase your question or ask something related to cybersecurity?");
             }
         }
     }
 
-    // Responds to the "How are you?" question
+    static bool DetectAndRespondToSentiment(string input)
+    {
+        if (input.Contains("worried") || input.Contains("anxious") || input.Contains("scared"))
+        {
+            TypeText("\nIt's completely understandable to feel that way. Scammers can be very convincing. Let me share some tips to help you stay safe.");
+            RespondPhishing();
+            lastTopic = "phishing";
+            return true;
+        }
+        else if (input.Contains("curious") || input.Contains("interested"))
+        {
+            TypeText("\nI'm glad you're curious! Cybersecurity knowledge is power. What would you like to learn more about?");
+            return true;
+        }
+        else if (input.Contains("frustrated") || input.Contains("confused") || input.Contains("overwhelmed"))
+        {
+            TypeText("\nNo worries, these topics can be tricky. I'm here to help — feel free to ask for explanations or examples anytime.");
+            return true;
+        }
+        return false;
+    }
+
     static void RespondHowAreYou()
     {
         TypeText("\nI'm just a chatbot, but I'm doing great! Thanks for asking. How can I help you with cybersecurity today?");
     }
 
-    // Responds to the "What's your purpose?" question
     static void RespondPurpose()
     {
         TypeText("\nI'm here to help you stay safe online! I can provide tips on password safety, phishing prevention, and safe browsing.");
     }
 
-    // Responds to the "What can I ask you about?" question
     static void RespondTopics()
     {
-        TypeText("\nYou can ask me about:\n- Password Safety\n- Phishing\n- Safe Browsing\n- General Cybersecurity Tips");
+        TypeText("\nYou can ask me about:\n- Password Safety\n- Phishing\n- Safe Browsing");
     }
 
-    // Responds with advice on password safety
     static void RespondPasswordSafety()
     {
-        TypeText("\nHere are some password safety tips:\n- Use long, complex passwords that are hard to guess.\n- Never use the same password for multiple accounts.\n- Consider using a password manager to keep track of your passwords securely.\n- Enable two-factor authentication whenever possible.");
+        List<string> passwordTips = new List<string>
+        {
+            "Use a mix of uppercase, lowercase, numbers, and special characters in your passwords.",
+            "Never reuse passwords across different accounts – if one gets compromised, others could too.",
+            "Use a password manager to generate and store complex passwords securely.",
+            "Avoid using easily guessable info like birthdays or pet names in your passwords.",
+            "Enable two-factor authentication (2FA) for an added layer of security."
+        };
+
+        string selectedTip = passwordTips[random.Next(passwordTips.Count)];
+        TypeText($"\nPassword Safety Tip: {selectedTip}");
     }
 
-    // Responds with advice on phishing
     static void RespondPhishing()
     {
-        TypeText("\nPhishing is a cyber attack where attackers try to trick you into revealing personal information. Here's how to stay safe:\n- Don't click on links in unsolicited emails or messages.\n- Always verify the sender's email address before opening attachments or links.\n- Look for signs of suspicious emails, like poor grammar or generic greetings.");
+        List<string> phishingTips = new List<string>
+        {
+            "Be cautious of emails asking for personal information. Scammers often disguise themselves as trusted organisations.",
+            "Check the sender's email address closely – phishing emails often use misspelled or lookalike domains.",
+            "Avoid clicking on suspicious links or downloading attachments from unknown senders.",
+            "Phishing messages often create a sense of urgency. Stay calm and verify the message before acting.",
+            "Look for generic greetings like 'Dear Customer' – legitimate companies usually address you by name."
+        };
+
+        string selectedTip = phishingTips[random.Next(phishingTips.Count)];
+        TypeText($"\nPhishing Tip: {selectedTip}");
     }
 
-    // Responds with tips on safe browsing
     static void RespondSafeBrowsing()
     {
-        TypeText("\nTo browse the internet safely, you should:\n- Use HTTPS websites when possible to ensure secure communication.\n- Avoid downloading files from untrusted sources.\n- Keep your browser and security software up to date.\n- Be cautious about sharing personal information online.");
+        List<string> browsingTips = new List<string>
+        {
+            "Always look for 'https://' in the URL to ensure a secure connection.",
+            "Avoid clicking on pop-ups or ads that seem too good to be true.",
+            "Use an up-to-date antivirus and keep your browser patched.",
+            "Don’t enter sensitive information on unfamiliar websites.",
+            "Be cautious when using public Wi-Fi – avoid logging into bank accounts or private systems."
+        };
+
+        string selectedTip = browsingTips[random.Next(browsingTips.Count)];
+        TypeText($"\nSafe Browsing Tip: {selectedTip}");
     }
 
-    // Display a header with specific color
     static void DisplayHeader(string text, ConsoleColor color)
     {
         Console.ForegroundColor = color;
@@ -179,7 +294,6 @@ class CybersecurityChatbot
         Console.ResetColor();
     }
 
-    // Display a line of a given symbol for dividers
     static void DisplayLine(char symbol, int length)
     {
         Console.ForegroundColor = ConsoleColor.Gray;
@@ -187,14 +301,14 @@ class CybersecurityChatbot
         Console.ResetColor();
     }
 
-    // Simulate typing effect with a delay
     static void TypeText(string text)
     {
         foreach (char c in text)
         {
             Console.Write(c);
-            Thread.Sleep(50); // Adjust the typing speed
+            Thread.Sleep(50);
         }
-        Console.WriteLine(); // Move to the next line after typing
+        Console.WriteLine();
     }
 }
+
